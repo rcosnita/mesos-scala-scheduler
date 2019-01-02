@@ -1,0 +1,4 @@
++nocsrf
+POST /start @controllers.SchedulerController.start
+
+GET /status @controllers.SchedulerController.status
