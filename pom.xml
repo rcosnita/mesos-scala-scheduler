@@ -13,6 +13,7 @@
 
         <play2.maven.plugin.version>1.0.0-rc4</play2.maven.plugin.version>
         <play2.version>2.6.20</play2.version>
+        <pureconfig.version>0.10.0</pureconfig.version>
 
         <scala.guice.version>4.2.1</scala.guice.version>
         <scala.plugin.version>3.4.4</scala.plugin.version>
@@ -68,6 +69,12 @@
             <groupId>org.apache.mesos</groupId>
             <artifactId>mesos</artifactId>
             <version>${mesos.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>com.github.pureconfig</groupId>
+            <artifactId>pureconfig_2.11</artifactId>
+            <version>${pureconfig.version}</version>
         </dependency>
     </dependencies>
 
