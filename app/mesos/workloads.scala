@@ -6,7 +6,7 @@ import org.apache.mesos.Protos.{CommandInfo, Resource, TaskInfo, Value}
 /**
   * Provides a simple contract for creating work which can be scheduled by the dummy scheduler.
   */
-trait Workload {
+trait Workload { self =>
   def command: String
 
   def requiredCpu: Double
@@ -14,6 +14,22 @@ trait Workload {
   def requiredMem: Double
 
   def requiredDisk: Option[Double]
+
+  def matches(cpu: Double, mem: Double): Boolean = requiredCpu < cpu && requiredMem < mem
+
+  def combine(w2: Workload) = new Workload {
+    override def command: String = s"${self.command} && ${w2.command}"
+
+    override def requiredCpu: Double = self.requiredCpu + w2.requiredCpu
+
+    override def requiredMem: Double = self.requiredMem + w2.requiredMem
+
+    override def requiredDisk: Option[Double] = {
+      val disk1: Double = self.requiredDisk.getOrElse(0)
+      val disk2: Double = w2.requiredDisk.getOrElse(0)
+      Some(disk1 + disk2)
+    }
+  }
 }
 
 object Workload {
@@ -27,6 +43,18 @@ object Workload {
         .setScalar(Value.Scalar.newBuilder().setValue(work.requiredMem)))
       .setCommand(CommandInfo.newBuilder.setValue(work.command))
   }
+
+  def zero: Workload = new Workload {
+    override def command: String = ""
+
+    override def requiredCpu: Double = 0
+
+    override def requiredMem: Double = 0
+
+    override def requiredDisk: Option[Double] = None
+
+    override def combine(w2: Workload) = w2
+  }
 }
 
 /**
@@ -35,16 +63,15 @@ object Workload {
 trait WorkloadProvider {
   def workloads: Seq[Workload]
 
-  def reserve: Option[(Workload, WorkloadProvider)]
+  def -(workDone: Seq[Workload]): WorkloadProvider
 }
 
 /**
   * A basic in memory storage for workloads which must be scheduled.
   */
 sealed class InMemoryWorkloadProvider @Inject() (val workloads: Seq[Workload]) extends WorkloadProvider {
-  override def reserve: Option[(Workload, WorkloadProvider)] = workloads match {
-    case Seq() => None
-    case _ => Some((workloads.head, new InMemoryWorkloadProvider(workloads.tail)))
+  override def -(workDone: Seq[Workload]): WorkloadProvider = {
+    new InMemoryWorkloadProvider(workloads diff workDone)
   }
 }
 

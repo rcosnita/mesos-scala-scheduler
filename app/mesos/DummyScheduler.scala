@@ -46,6 +46,8 @@ trait OfferResourceCalculator {
 sealed class DummyScheduler @Inject() (mesosCfg: MesosConfig, frameworkInfo: FrameworkInfo,
                                        workProvider: WorkloadProvider)
   extends Scheduler with OfferResourceCalculator {
+  private type WorkToBeScheduled = Map[(OfferID, SlaveID), Seq[Workload]]
+
   private var mutableProvider = workProvider
   private lazy val providerLock = new ReentrantLock()
 
@@ -74,20 +76,14 @@ sealed class DummyScheduler @Inject() (mesosCfg: MesosConfig, frameworkInfo: Fra
     offers.foreach(o => driver.declineOffer(o.getId))
 
   private def scheduleNextChunk(driver: SchedulerDriver, offers: Seq[Protos.Offer])
-                               (block: (SchedulerDriver, Seq[Protos.Offer], Workload) => Unit) = {
+                               (block: (SchedulerDriver, WorkToBeScheduled) => Unit) = {
     providerLock.lock()
     try {
-      mutableProvider.reserve match {
-        case None => {
-          declineAllOffers(driver, offers)
-          providerLock.unlock()
-        }
-        case Some((w: Workload, p: WorkloadProvider)) => {
-          mutableProvider = p
-          providerLock.unlock()
-          block(driver, offers, w)
-        }
-      }
+      val (matchingWork, scheduledWork) = getWorkForOffers(offers, mutableProvider.workloads)
+      mutableProvider -= scheduledWork
+      providerLock.unlock()
+
+      block(driver, matchingWork)
     } catch {
       case ex => {
         System.err.println(ex)
@@ -95,30 +91,62 @@ sealed class DummyScheduler @Inject() (mesosCfg: MesosConfig, frameworkInfo: Fra
     }
   }
 
-  private def scheduleWorkload(driver: SchedulerDriver, offers: Seq[Protos.Offer], work: Workload): Unit = {
+  private def reserveWhileResourcesAvailable(workloads: Seq[Workload], availableCpu: Double, availableMem: Double,
+                                             collectedWorkload: Seq[Workload]=Seq()): Seq[Workload] = {
+    if (workloads.isEmpty) {
+      collectedWorkload
+    } else {
+      val w = workloads.head
+      if (w.matches(availableCpu, availableMem)) {
+        val remCpu = availableCpu - w.requiredCpu
+        val remMem = availableMem - w.requiredMem
+        reserveWhileResourcesAvailable(workloads.tail, remCpu, remMem, collectedWorkload ++ List(w))
+      } else {
+        reserveWhileResourcesAvailable(workloads.tail, availableCpu, availableMem, collectedWorkload)
+      }
+    }
+  }
+
+  private def getWorkForOffers(offers: Seq[Protos.Offer], work: Seq[Workload]): (WorkToBeScheduled, Seq[Workload]) = {
+    val matchingWork = offers.map(o => (o.getId, o.getSlaveId, calculateCpuResource(o), calculateMemResource(o)))
+      .map {
+        case (offerId, slaveId, cpu, mem) => {
+          val work = reserveWhileResourcesAvailable(mutableProvider.workloads, cpu, mem)
+          mutableProvider -= work
+          (offerId, slaveId, work)
+        }
+      }
+      .groupBy(t => (t._1, t._2))
+      .flatMap {
+        case ((offerId, slaveId), work) => Map((offerId, slaveId) -> work.map(_._3).filter(w => w != Workload.zero))
+      }
+      .flatMap {
+        case ((offerId, slaveId), work) => Map((offerId, slaveId) -> work.flatten)
+      }
+
+    val scheduledWork = matchingWork.values.flatten.toSeq
+    (matchingWork, scheduledWork)
+  }
+
+  private def scheduleWorkload(driver: SchedulerDriver, work: WorkToBeScheduled): Unit = {
     import mesos.Workload._
 
-    val matchingOffers = offers.map(o => (o.getId, o.getSlaveId, calculateCpuResource(o), calculateMemResource(o), calculateDiskResource(o)))
-      .filter {
-        case (_, _, cpu, mem, _) => cpu > work.requiredCpu && mem > work.requiredMem
-      }
-      .map {
-        case (offerId, slaveId, _, _, _) => (offerId, slaveId)
-      }
+    work.foreach {
+      case ((offerId, slaveId), tasks) => {
+        val mesosTasks = tasks.map(w => {
+          val taskBuilder: TaskInfo.Builder = w
+          val taskId = Protos.TaskID.newBuilder.setValue(UUID.randomUUID.toString)
+          taskBuilder.setTaskId(taskId)
+            .setName(w.command)
+            .setSlaveId(slaveId)
+            .build
+        })
 
-    if (matchingOffers.isEmpty) System.err.println("The workload is discarded ---> not enough resources")
-    else {
-      val (offerId, slaveId) = matchingOffers.head
-      val taskId = Protos.TaskID.newBuilder.setValue(UUID.randomUUID.toString)
-      val taskBuilder: TaskInfo.Builder = work
-      val task = taskBuilder.setTaskId(taskId)
-        .setName(work.command)
-        .setSlaveId(slaveId)
-        .build
-      driver.launchTasks(
-        util.Collections.singletonList(offerId),
-        util.Collections.singletonList(task),
-        Filters.newBuilder.build)
+        driver.launchTasks(
+          util.Collections.singletonList(offerId),
+          mesosTasks,
+          Filters.newBuilder.build)
+      }
     }
   }
 
