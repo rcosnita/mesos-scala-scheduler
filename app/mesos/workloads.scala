@@ -1,7 +1,8 @@
 package mesos
 
 import javax.inject.Inject
-import org.apache.mesos.Protos.{CommandInfo, Resource, TaskInfo, Value}
+import org.apache.mesos.Protos
+import org.apache.mesos.Protos._
 
 /**
   * Provides a simple contract for creating work which can be scheduled by the dummy scheduler.
@@ -34,6 +35,15 @@ trait Workload { self =>
 
 object Workload {
   implicit def workloadToTaskBuilder(work: Workload): TaskInfo.Builder = {
+    val containerInfo = Protos.ContainerInfo.newBuilder
+        .setType(Protos.ContainerInfo.Type.DOCKER)
+        .setDocker(
+          Protos.ContainerInfo.DockerInfo.newBuilder
+            .setImage("alpine:3.8")
+            .addParameters(Parameter.newBuilder.setKey("env").setValue("ENV1=awesome value"))
+            .addParameters(Parameter.newBuilder.setKey("env").setValue("ENV2=awesome value 2"))
+        )
+
     TaskInfo.newBuilder
       .addResources(Resource.newBuilder.setName("cpus")
       .setType(Value.Type.SCALAR)
@@ -41,7 +51,8 @@ object Workload {
       .addResources(Resource.newBuilder.setName("mem")
         .setType(Value.Type.SCALAR)
         .setScalar(Value.Scalar.newBuilder().setValue(work.requiredMem)))
-      .setCommand(CommandInfo.newBuilder.setValue(work.command))
+      .setContainer(containerInfo)
+      .setCommand(Protos.CommandInfo.newBuilder.setValue(work.command))
   }
 
   def zero: Workload = new Workload {

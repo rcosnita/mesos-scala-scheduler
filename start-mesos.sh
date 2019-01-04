@@ -11,7 +11,7 @@ start_master() {
 }
 
 start_slave() {
-    mesos-slave --master=127.0.0.1:12000 --port=12001 --work_dir=$(pwd)/mesos/slave
+    mesos-slave --master=127.0.0.1:12000 --port=12001 --work_dir=$(pwd)/mesos/slave --containerizers=docker,mesos
 }
 
 case ${MESOS_LAYER} in

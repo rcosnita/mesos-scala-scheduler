@@ -54,5 +54,5 @@ class AppModule extends AbstractModule with ScalaModule {
   def workloads(frameworkConfig: FrameworkConfig): Seq[Workload] =
     for {
       idx <- 0 until frameworkConfig.numOfTasks
-    } yield SimpleCommandWorkload(command = s"echo hello world ${idx}")
+    } yield SimpleCommandWorkload(command = s"echo hello world ${idx} $${ENV1} $${ENV2}")
 }
