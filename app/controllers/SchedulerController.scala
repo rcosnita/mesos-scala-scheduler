@@ -3,6 +3,7 @@ package controllers
 import java.util.concurrent.atomic.AtomicBoolean
 
 import javax.inject.{Inject, Singleton}
+import mesos.DummyScheduler
 import org.apache.mesos.MesosSchedulerDriver
 import play.api.mvc.{AbstractController, ControllerComponents}
 
@@ -12,8 +13,9 @@ import scala.concurrent.{ExecutionContext, Future}
   * Provides the http api for working with the new dummy framework.
   */
 @Singleton()
-class SchedulerController @Inject() (cc: ControllerComponents,
-                                     driver: MesosSchedulerDriver)(implicit ec: ExecutionContext)
+class SchedulerController @Inject()(cc: ControllerComponents,
+                                     driver: MesosSchedulerDriver,
+                                     scheduler: DummyScheduler)(implicit ec: ExecutionContext)
   extends AbstractController(cc) {
   private var schedulerStarted: AtomicBoolean = new AtomicBoolean(false)
 
@@ -36,7 +38,8 @@ class SchedulerController @Inject() (cc: ControllerComponents,
   /**
     * Provides useful information about the current framework.
     */
-  def status = Action.async {
-    Future.successful(Ok("dummy content for now"))
+  def resubmit = Action.async {
+    scheduler.resubmit
+    Future.successful(Ok("all the tasks were resubmitted to mesos."))
   }
 }

@@ -1,4 +1,5 @@
 +nocsrf
 POST /start @controllers.SchedulerController.start
 
-GET /status @controllers.SchedulerController.status
++nocsrf
+POST /resubmit @controllers.SchedulerController.resubmit

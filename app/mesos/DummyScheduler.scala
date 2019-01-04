@@ -51,6 +51,12 @@ sealed class DummyScheduler @Inject() (mesosCfg: MesosConfig, frameworkInfo: Fra
   private var mutableProvider = workProvider
   private lazy val providerLock = new ReentrantLock()
 
+  def resubmit: Unit = {
+    providerLock.lock()
+    mutableProvider = workProvider
+    providerLock.unlock()
+  }
+
   override def registered(driver: SchedulerDriver, frameworkId: Protos.FrameworkID, masterInfo: Protos.MasterInfo): Unit = {
     System.out.println(s"Registered framework ${frameworkId.getValue} to master ${masterInfo.getAddress.getIp}:${masterInfo.getAddress.getPort}")
   }
@@ -70,6 +76,36 @@ sealed class DummyScheduler @Inject() (mesosCfg: MesosConfig, frameworkInfo: Fra
     } else {
       scheduleNextChunk(driver, offers)(scheduleWorkload)
     }
+  }
+
+  override def offerRescinded(driver: SchedulerDriver, offerId: Protos.OfferID): Unit = {
+    System.out.println(s"Offer rescinded: ${offerId.getValue}")
+  }
+
+  override def statusUpdate(driver: SchedulerDriver, status: Protos.TaskStatus): Unit = {
+    System.out.println(s"Status updated: taskId--->${status.getTaskId.getValue}, status: ${status.getState}")
+  }
+
+  override def frameworkMessage(driver: SchedulerDriver, executorId: Protos.ExecutorID, slaveId: Protos.SlaveID,
+                                data: Array[Byte]): Unit = {
+    System.out.println("Framework message received.")
+  }
+
+  override def disconnected(driver: SchedulerDriver): Unit = {
+    System.out.println("Disconnected")
+  }
+
+  override def slaveLost(driver: SchedulerDriver, slaveId: Protos.SlaveID): Unit = {
+    System.err.println(s"Slave lost ${slaveId.getValue}.")
+  }
+
+  override def executorLost(driver: SchedulerDriver, executorId: Protos.ExecutorID, slaveId: Protos.SlaveID,
+                            status: Int): Unit = {
+    System.err.println("Executor lost.")
+  }
+
+  override def error(driver: SchedulerDriver, message: String): Unit = {
+    System.err.println(s"Unexpected error: ${message}")
   }
 
   private def declineAllOffers(driver: SchedulerDriver, offers: Seq[Protos.Offer]) =
@@ -148,35 +184,5 @@ sealed class DummyScheduler @Inject() (mesosCfg: MesosConfig, frameworkInfo: Fra
           Filters.newBuilder.build)
       }
     }
-  }
-
-  override def offerRescinded(driver: SchedulerDriver, offerId: Protos.OfferID): Unit = {
-    System.out.println(s"Offer rescinded: ${offerId.getValue}")
-  }
-
-  override def statusUpdate(driver: SchedulerDriver, status: Protos.TaskStatus): Unit = {
-    System.out.println(s"Status updated: taskId--->${status.getTaskId.getValue}, status: ${status.getState}")
-  }
-
-  override def frameworkMessage(driver: SchedulerDriver, executorId: Protos.ExecutorID, slaveId: Protos.SlaveID,
-                                data: Array[Byte]): Unit = {
-    System.out.println("Framework message received.")
-  }
-
-  override def disconnected(driver: SchedulerDriver): Unit = {
-    System.out.println("Disconnected")
-  }
-
-  override def slaveLost(driver: SchedulerDriver, slaveId: Protos.SlaveID): Unit = {
-    System.err.println(s"Slave lost ${slaveId.getValue}.")
-  }
-
-  override def executorLost(driver: SchedulerDriver, executorId: Protos.ExecutorID, slaveId: Protos.SlaveID,
-                            status: Int): Unit = {
-    System.err.println("Executor lost.")
-  }
-
-  override def error(driver: SchedulerDriver, message: String): Unit = {
-    System.err.println(s"Unexpected error: ${message}")
   }
 }
